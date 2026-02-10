@@ -1,85 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Collective Escrow</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #0f0f0f;
-      color: #ffffff;
-      margin: 0;
-      padding: 16px;
-    }
-    h1 {
-      font-size: 20px;
-      margin-bottom: 8px;
-    }
-    .card {
-      background: #1c1c1e;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-    .muted {
-      color: #9b9b9b;
-      font-size: 14px;
-    }
-    .btn {
-      margin-top: 12px;
-      width: 100%;
-      padding: 12px;
-      border-radius: 10px;
-      border: none;
-      background: #2f80ff;
-      color: white;
-      font-size: 16px;
-      cursor: pointer;
-    }
-  </style>
 </head>
-<body>
-  <h1>Collective Escrow</h1>
-
-  <div class="card">
-    <div class="muted">Your balance</div>
-    <div id="balance">Loading...</div>
-  </div>
-
-  <div class="card">
-    <div class="muted">Listings</div>
-    <div>Coming soon</div>
-  </div>
-
-  <button class="btn" onclick="alert('Participation coming soon')">
-    Participate
-  </button>
+<body style="background:#0f0f0f;color:white;font-family:sans-serif;padding:16px">
+  <h3>Collective Escrow</h3>
+  <div id="balance">Loading…</div>
 
   <script>
-  const tg = window.Telegram.WebApp;
-  tg.ready();
+    const tg = window.Telegram.WebApp;
+    tg.ready();
 
-  fetch("https://collective-escrow-backend.onrender.com/api/me", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      initData: tg.initData
+    fetch("https://collective-escrow-backend.onrender.com/api/me", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: tg.initData })
     })
-  })
-    .then(res => {
-      if (!res.ok) throw new Error("Unauthorized");
-      return res.json();
-    })
-    .then(data => {
+    .then(r => r.json())
+    .then(d => {
       document.getElementById("balance").innerText =
-        data.balance + " tokens";
+        "Balance: " + d.balance + " tokens";
     })
     .catch(() => {
-      document.getElementById("balance").innerText =
-        "Access denied";
+      document.getElementById("balance").innerText = "Access denied";
     });
-</script>
+  </script>
 </body>
 </html>
