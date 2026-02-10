@@ -10,22 +10,18 @@
   <div id="balance">Loading…</div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
+  const tg = window.Telegram.WebApp;
+  tg.ready();
 
-    fetch("https://collective-escrow-backend.onrender.com/api/me", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: tg.initData })
-    })
-    .then(r => r.json())
-    .then(d => {
-      document.getElementById("balance").innerText =
-        "Balance: " + d.balance + " tokens";
-    })
-    .catch(() => {
-      document.getElementById("balance").innerText = "Access denied";
-    });
-  </script>
+  const info = {
+    hasTelegram: !!window.Telegram,
+    hasWebApp: !!window.Telegram?.WebApp,
+    initDataLength: tg.initData?.length || 0,
+    initDataUnsafe: tg.initDataUnsafe || null
+  };
+
+  document.getElementById("balance").innerText =
+    JSON.stringify(info, null, 2);
+</script>
 </body>
 </html>
