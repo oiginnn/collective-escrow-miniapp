@@ -58,11 +58,28 @@
   </button>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
+  const tg = window.Telegram.WebApp;
+  tg.ready();
 
-    // For now we just show that user is identified
-    document.getElementById("balance").innerText = "0 tokens";
-  </script>
+  fetch("https://collective-escrow-backend.onrender.com/api/me", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      initData: tg.initData
+    })
+  })
+    .then(res => {
+      if (!res.ok) throw new Error("Unauthorized");
+      return res.json();
+    })
+    .then(data => {
+      document.getElementById("balance").innerText =
+        data.balance + " tokens";
+    })
+    .catch(() => {
+      document.getElementById("balance").innerText =
+        "Access denied";
+    });
+</script>
 </body>
 </html>
