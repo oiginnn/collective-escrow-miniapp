@@ -199,6 +199,8 @@
         await loadMe();
       } catch (e) {
         status.innerText = "Donate failed: " + e.message;
+        // refresh balance view in case rollback happened
+        try { await loadMe(); } catch {}
       } finally {
         donateLock = false;
         btn.disabled = false;
@@ -235,21 +237,39 @@
           `;
         }
 
+        // participations
         const parts = await apiPost("/api/me/participations", { initData: tg.initData });
-        const items = parts.participations || [];
-        const list = items.length ? items.map(x => `
+        const pItems = parts.participations || [];
+        const pList = pItems.length ? pItems.map(x => `
           <div style="border:1px solid #2a2a2a;border-radius:14px;padding:12px;margin-bottom:10px">
-            <div style="font-weight:800">Lot: ${x.lot_id}</div>
+            <div style="font-weight:800">Participation</div>
+            <div style="opacity:.85;margin-top:4px">Lot: ${x.lot_id}</div>
             <div style="opacity:.85;margin-top:4px">${Number(x.amount).toFixed(2)} USDT</div>
             <div style="font-size:12px;opacity:.7;margin-top:6px">${fmtDate(x.created_at)}</div>
           </div>
         `).join("") : `<div style="opacity:.85">No participations yet.</div>`;
 
+        // donations
+        const dons = await apiPost("/api/me/donations", { initData: tg.initData });
+        const dItems = dons.donations || [];
+        const dList = dItems.length ? dItems.map(x => `
+          <div style="border:1px solid #2a2a2a;border-radius:14px;padding:12px;margin-bottom:10px">
+            <div style="font-weight:800">Donation</div>
+            <div style="opacity:.85;margin-top:4px">Lot: ${x.lot_id}</div>
+            <div style="opacity:.85;margin-top:4px">Amount: ${Number(x.amount).toFixed(2)} USDT</div>
+            <div style="font-size:12px;opacity:.7;margin-top:6px">${fmtDate(x.created_at)}</div>
+          </div>
+        `).join("") : `<div style="opacity:.85">No donations yet.</div>`;
+
         setScreen(`
           ${header}
           ${adminBox}
+
           <div style="font-size:16px;font-weight:800;margin:12px 0">My participations</div>
-          ${list}
+          ${pList}
+
+          <div style="font-size:16px;font-weight:800;margin:12px 0">My donations</div>
+          ${dList}
         `);
 
       } catch (e) {
