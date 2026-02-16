@@ -25,9 +25,10 @@
     tg.ready();
 
     const API = "https://collective-escrow-backend.onrender.com";
-
     let lotsCache = [];
     let donateLotId = null;
+
+    let me = { balance: 0, isAdmin: false, user: null };
 
     function setScreen(html) { document.getElementById("screen").innerHTML = html; }
     function fmtDate(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
@@ -37,7 +38,6 @@
       const hasHash = initData.includes("hash=");
       const hasUser = initData.includes("user=");
       const len = initData.length;
-
       document.getElementById("debug").innerHTML =
         `INITDATA len=<b>${len}</b> | hash=<b>${hasHash}</b> | user=<b>${hasUser}</b> | platform=<b>${tg.platform || "?"}</b>`;
     }
@@ -54,33 +54,25 @@
       `;
     }
 
-    function lotCard(lot) {
-      const img = (lot.media && lot.media[0]) ? lot.media[0] : "";
-      return `
-        <div style="border:1px solid #2a2a2a;border-radius:16px;padding:12px;margin-bottom:12px">
-          ${img ? `<img src="${img}" style="width:100%;border-radius:12px;max-height:220px;object-fit:cover" />` : ``}
-          <div style="margin-top:10px;font-size:16px;font-weight:800">${lot.title}</div>
-          <div style="margin-top:6px;font-size:13px;opacity:.8">${lot.description || ""}</div>
+    async function apiPost(path, body) {
+      const r = await fetch(API + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-          ${progressBar(lot.progress || 0)}
-          <div style="margin-top:8px;font-size:12px;opacity:.7">Ends: ${fmtDate(lot.ends_at)}</div>
+      const text = await r.text();
+      let d = null;
+      try { d = JSON.parse(text); } catch {}
+      if (!r.ok) {
+        const err = d?.error || text || ("HTTP " + r.status);
+        throw new Error(err);
+      }
+      return d;
+    }
 
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button style="flex:1;padding:10px;border-radius:12px;border:0;background:#3b82f6;color:white"
-              onclick="alert('Participate — next step')">
-              Participate
-            </button>
-            <button style="flex:1;padding:10px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
-              onclick="alert('Buy now — next step')">
-              Buy now
-            </button>
-            <button style="flex:1;padding:10px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
-              onclick="openDonate('${lot.id}')">
-              DONATE
-            </button>
-          </div>
-        </div>
-      `;
+    async function loadMe() {
+      me = await apiPost("/api/me", { initData: tg.initData });
     }
 
     async function loadLots() {
@@ -92,12 +84,61 @@
       lotsCache = d.lots || [];
     }
 
+    function lotCard(lot) {
+      const img = (lot.media && lot.media[0]) ? lot.media[0] : "";
+      return `
+        <div style="border:1px solid #2a2a2a;border-radius:16px;padding:12px;margin-bottom:12px">
+          ${img ? `<img src="${img}" style="width:100%;border-radius:12px;max-height:220px;object-fit:cover" />` : ``}
+          <div style="margin-top:10px;font-size:16px;font-weight:800">${lot.title}</div>
+          <div style="margin-top:6px;font-size:13px;opacity:.8">${lot.description || ""}</div>
+
+          ${progressBar(lot.progress || 0)}
+          <div style="margin-top:8px;font-size:12px;opacity:.7">Ends: ${fmtDate(lot.ends_at)}</div>
+
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button style="flex:1;min-width:140px;padding:10px;border-radius:12px;border:0;background:#3b82f6;color:white"
+              onclick="participate('${lot.id}')">
+              Participate (${Number(lot.price_per_participation).toFixed(2)} ${lot.currency})
+            </button>
+
+            <button style="flex:1;min-width:120px;padding:10px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
+              onclick="alert('Buy now — next step')">
+              Buy now
+            </button>
+
+            <button style="flex:1;min-width:120px;padding:10px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
+              onclick="openDonate('${lot.id}')">
+              DONATE
+            </button>
+          </div>
+
+          <div id="lotmsg-${lot.id}" style="margin-top:10px;font-size:13px;opacity:.9"></div>
+        </div>
+      `;
+    }
+
     function renderFeed() {
       if (!lotsCache.length) {
         setScreen("<div>No active lots yet.</div>");
         return;
       }
       setScreen(lotsCache.map(lotCard).join(""));
+    }
+
+    async function participate(lotId) {
+      const msg = document.getElementById("lotmsg-" + lotId);
+      msg.innerText = "Processing…";
+
+      try {
+        const d = await apiPost("/api/participate", { initData: tg.initData, lotId });
+        msg.innerText = "✅ Participated. Balance updated.";
+        await loadMe();
+        // reload lots to refresh progress
+        await loadLots();
+        renderFeed();
+      } catch (e) {
+        msg.innerText = "❌ " + e.message;
+      }
     }
 
     function openDonate(lotId) {
@@ -134,8 +175,6 @@
     }
 
     async function confirmDonate() {
-      updateDebug();
-
       const el = document.getElementById("donateAmount");
       const status = document.getElementById("donateStatus");
       const amount = Number(el.value);
@@ -145,88 +184,92 @@
         return;
       }
 
-      if (!tg.initData || !tg.initData.includes("hash=")) {
-        status.innerText = "InitData missing (open ONLY inside Telegram Mini App).";
-        return;
-      }
-
       status.innerText = "Sending…";
-
       try {
-        const r = await fetch(API + "/api/donate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: tg.initData, lotId: donateLotId, amount })
-        });
-
-        const text = await r.text();
-        let d = null;
-        try { d = JSON.parse(text); } catch {}
-
-        if (!r.ok || !d?.ok) {
-          status.innerText = "Donate failed: " + (d?.error || text || ("HTTP " + r.status));
-          return;
-        }
-
+        const d = await apiPost("/api/donate", { initData: tg.initData, lotId: donateLotId, amount });
         status.innerText = "✅ Donation recorded.";
       } catch (e) {
-        status.innerText = "Network error: " + e.message;
+        status.innerText = "Donate failed: " + e.message;
       }
     }
 
     async function renderMy() {
-      updateDebug();
       setScreen(`<div style="opacity:.85">Loading…</div>`);
-
       try {
-        const r = await fetch(API + "/api/me/donations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: tg.initData })
-        });
+        await loadMe();
 
-        const text = await r.text();
-        let d = null;
-        try { d = JSON.parse(text); } catch {}
+        const header = `
+          <div style="font-size:18px;font-weight:800;margin-bottom:10px">My</div>
+          <div style="padding:12px;border:1px solid #2a2a2a;border-radius:14px;margin-bottom:12px">
+            <div style="opacity:.8">Balance</div>
+            <div style="font-size:22px;font-weight:900;margin-top:4px">${Number(me.balance).toFixed(2)} USDT</div>
+          </div>
+        `;
 
-        if (!r.ok) {
-          setScreen("Failed: " + (d?.error || text || ("HTTP " + r.status)));
-          return;
+        let adminBox = "";
+        if (me.isAdmin) {
+          const tgId = JSON.parse(new URLSearchParams(tg.initData).get("user")).id;
+          adminBox = `
+            <div style="padding:12px;border:1px solid #2a2a2a;border-radius:14px;margin-bottom:12px">
+              <div style="font-weight:800;margin-bottom:8px">Admin test tools</div>
+              <div style="font-size:12px;opacity:.8;margin-bottom:8px">Top up yourself (test balance)</div>
+              <button style="padding:10px;border-radius:12px;border:0;background:#f59e0b;color:black;font-weight:900"
+                onclick="adminTopup(${tgId}, 50)">
+                +50 USDT (test)
+              </button>
+              <div id="adminStatus" style="margin-top:10px;font-size:13px;opacity:.9"></div>
+            </div>
+          `;
         }
 
-        const items = d.donations || [];
-        if (!items.length) {
-          setScreen(`<div style="font-size:18px;font-weight:800;margin-bottom:10px">My donations</div>
-                     <div>No donations yet.</div>`);
-          return;
-        }
-
-        const rows = items.map(x => `
+        // participations
+        const parts = await apiPost("/api/me/participations", { initData: tg.initData });
+        const items = parts.participations || [];
+        const list = items.length ? items.map(x => `
           <div style="border:1px solid #2a2a2a;border-radius:14px;padding:12px;margin-bottom:10px">
-            <div style="font-weight:800">${x.lot_title}</div>
-            <div style="opacity:.85;margin-top:4px">${Number(x.amount).toFixed(2)} ${x.currency}</div>
+            <div style="font-weight:800">Lot: ${x.lot_id}</div>
+            <div style="opacity:.85;margin-top:4px">${Number(x.amount).toFixed(2)} USDT</div>
             <div style="font-size:12px;opacity:.7;margin-top:6px">${fmtDate(x.created_at)}</div>
           </div>
-        `).join("");
+        `).join("") : `<div style="opacity:.85">No participations yet.</div>`;
 
         setScreen(`
-          <div style="font-size:18px;font-weight:800;margin-bottom:10px">My donations</div>
-          ${rows}
+          ${header}
+          ${adminBox}
+          <div style="font-size:16px;font-weight:800;margin:12px 0">My participations</div>
+          ${list}
         `);
+
       } catch (e) {
         setScreen("Failed: " + e.message);
       }
     }
 
-    document.getElementById("tabFeed").onclick = () => renderFeed();
+    async function adminTopup(userTelegramId, amount) {
+      const el = document.getElementById("adminStatus");
+      el.innerText = "Processing…";
+      try {
+        const d = await apiPost("/api/admin/topup", { initData: tg.initData, userTelegramId: String(userTelegramId), amount });
+        el.innerText = "✅ New balance: " + Number(d.newBalance).toFixed(2) + " USDT";
+        await renderMy();
+      } catch (e) {
+        el.innerText = "❌ " + e.message;
+      }
+    }
+
+    document.getElementById("tabFeed").onclick = async () => {
+      await loadLots();
+      renderFeed();
+    };
     document.getElementById("tabMy").onclick = () => renderMy();
 
     (async () => {
       try {
+        await loadMe();
         await loadLots();
         renderFeed();
       } catch (e) {
-        setScreen("Failed to load lots: " + e.message);
+        setScreen("Failed to load: " + e.message);
       }
     })();
   </script>
