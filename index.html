@@ -14,6 +14,10 @@
     </div>
   </div>
 
+  <div id="debug" style="padding:12px 16px;border-bottom:1px solid #222;font-size:12px;opacity:.85">
+    INITDATA: checking…
+  </div>
+
   <div id="screen" style="padding:16px">Loading…</div>
 
   <script>
@@ -27,6 +31,18 @@
 
     function setScreen(html) { document.getElementById("screen").innerHTML = html; }
     function fmtDate(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
+
+    function updateDebug() {
+      const initData = tg.initData || "";
+      const hasHash = initData.includes("hash=");
+      const hasUser = initData.includes("user=");
+      const len = initData.length;
+
+      document.getElementById("debug").innerHTML =
+        `INITDATA len=<b>${len}</b> | hash=<b>${hasHash}</b> | user=<b>${hasUser}</b> | platform=<b>${tg.platform || "?"}</b>`;
+    }
+
+    updateDebug();
 
     function progressBar(p) {
       const pct = Math.round((p || 0) * 100);
@@ -108,7 +124,7 @@
 
         <div style="display:flex;gap:10px;margin-top:16px">
           <button style="flex:1;padding:12px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
-            onclick="goFeed()">Back</button>
+            onclick="renderFeed()">Back</button>
           <button style="flex:1;padding:12px;border-radius:12px;border:0;background:#22c55e;color:black;font-weight:900"
             onclick="confirmDonate()">Confirm</button>
         </div>
@@ -118,12 +134,19 @@
     }
 
     async function confirmDonate() {
+      updateDebug();
+
       const el = document.getElementById("donateAmount");
       const status = document.getElementById("donateStatus");
       const amount = Number(el.value);
 
       if (!Number.isFinite(amount) || amount < 1) {
         status.innerText = "Enter an amount >= 1";
+        return;
+      }
+
+      if (!tg.initData || !tg.initData.includes("hash=")) {
+        status.innerText = "InitData missing (open ONLY inside Telegram Mini App).";
         return;
       }
 
@@ -151,12 +174,10 @@
       }
     }
 
-    function goFeed() {
-      renderFeed();
-    }
-
     async function renderMy() {
+      updateDebug();
       setScreen(`<div style="opacity:.85">Loading…</div>`);
+
       try {
         const r = await fetch(API + "/api/me/donations", {
           method: "POST",
@@ -197,11 +218,9 @@
       }
     }
 
-    // tabs
     document.getElementById("tabFeed").onclick = () => renderFeed();
     document.getElementById("tabMy").onclick = () => renderMy();
 
-    // init
     (async () => {
       try {
         await loadLots();
