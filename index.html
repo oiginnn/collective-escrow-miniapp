@@ -29,6 +29,8 @@
     let donateLotId = null;
 
     let me = { balance: 0, isAdmin: false, user: null };
+    let topupLock = false;
+    let donateLock = false;
 
     function setScreen(html) { document.getElementById("screen").innerHTML = html; }
     function fmtDate(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
@@ -41,7 +43,6 @@
       document.getElementById("debug").innerHTML =
         `INITDATA len=<b>${len}</b> | hash=<b>${hasHash}</b> | user=<b>${hasUser}</b> | platform=<b>${tg.platform || "?"}</b>`;
     }
-
     updateDebug();
 
     function progressBar(p) {
@@ -64,10 +65,7 @@
       const text = await r.text();
       let d = null;
       try { d = JSON.parse(text); } catch {}
-      if (!r.ok) {
-        const err = d?.error || text || ("HTTP " + r.status);
-        throw new Error(err);
-      }
+      if (!r.ok) throw new Error(d?.error || text || ("HTTP " + r.status));
       return d;
     }
 
@@ -96,7 +94,7 @@
           <div style="margin-top:8px;font-size:12px;opacity:.7">Ends: ${fmtDate(lot.ends_at)}</div>
 
           <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-            <button style="flex:1;min-width:140px;padding:10px;border-radius:12px;border:0;background:#3b82f6;color:white"
+            <button style="flex:1;min-width:160px;padding:10px;border-radius:12px;border:0;background:#3b82f6;color:white"
               onclick="participate('${lot.id}')">
               Participate (${Number(lot.price_per_participation).toFixed(2)} ${lot.currency})
             </button>
@@ -130,10 +128,9 @@
       msg.innerText = "Processing…";
 
       try {
-        const d = await apiPost("/api/participate", { initData: tg.initData, lotId });
+        await apiPost("/api/participate", { initData: tg.initData, lotId });
         msg.innerText = "✅ Participated. Balance updated.";
         await loadMe();
-        // reload lots to refresh progress
         await loadLots();
         renderFeed();
       } catch (e) {
@@ -152,7 +149,8 @@
 
       setScreen(`
         <div style="font-size:18px;font-weight:800;margin-bottom:8px">Donate</div>
-        <div style="opacity:.85;margin-bottom:14px">To: <b>${title}</b></div>
+        <div style="opacity:.85;margin-bottom:6px">To: <b>${title}</b></div>
+        <div style="opacity:.85;margin-bottom:14px">Your balance: <b>${Number(me.balance).toFixed(2)} USDT</b></div>
 
         <div style="font-size:12px;opacity:.7;margin-bottom:6px">Amount (USDT)</div>
         <input id="donateAmount" type="number" min="1" step="0.01"
@@ -166,7 +164,7 @@
         <div style="display:flex;gap:10px;margin-top:16px">
           <button style="flex:1;padding:12px;border-radius:12px;border:1px solid #444;background:transparent;color:white"
             onclick="renderFeed()">Back</button>
-          <button style="flex:1;padding:12px;border-radius:12px;border:0;background:#22c55e;color:black;font-weight:900"
+          <button id="btnDonate" style="flex:1;padding:12px;border-radius:12px;border:0;background:#22c55e;color:black;font-weight:900"
             onclick="confirmDonate()">Confirm</button>
         </div>
 
@@ -175,21 +173,36 @@
     }
 
     async function confirmDonate() {
+      if (donateLock) return;
+      donateLock = true;
+
+      const btn = document.getElementById("btnDonate");
       const el = document.getElementById("donateAmount");
       const status = document.getElementById("donateStatus");
       const amount = Number(el.value);
 
+      btn.disabled = true;
+      btn.style.opacity = "0.6";
+
       if (!Number.isFinite(amount) || amount < 1) {
         status.innerText = "Enter an amount >= 1";
+        donateLock = false;
+        btn.disabled = false;
+        btn.style.opacity = "1";
         return;
       }
 
       status.innerText = "Sending…";
       try {
         const d = await apiPost("/api/donate", { initData: tg.initData, lotId: donateLotId, amount });
-        status.innerText = "✅ Donation recorded.";
+        status.innerText = "✅ Donation recorded. Balance updated.";
+        await loadMe();
       } catch (e) {
         status.innerText = "Donate failed: " + e.message;
+      } finally {
+        donateLock = false;
+        btn.disabled = false;
+        btn.style.opacity = "1";
       }
     }
 
@@ -213,7 +226,7 @@
             <div style="padding:12px;border:1px solid #2a2a2a;border-radius:14px;margin-bottom:12px">
               <div style="font-weight:800;margin-bottom:8px">Admin test tools</div>
               <div style="font-size:12px;opacity:.8;margin-bottom:8px">Top up yourself (test balance)</div>
-              <button style="padding:10px;border-radius:12px;border:0;background:#f59e0b;color:black;font-weight:900"
+              <button id="btnTopup" style="padding:10px;border-radius:12px;border:0;background:#f59e0b;color:black;font-weight:900"
                 onclick="adminTopup(${tgId}, 50)">
                 +50 USDT (test)
               </button>
@@ -222,7 +235,6 @@
           `;
         }
 
-        // participations
         const parts = await apiPost("/api/me/participations", { initData: tg.initData });
         const items = parts.participations || [];
         const list = items.length ? items.map(x => `
@@ -246,7 +258,14 @@
     }
 
     async function adminTopup(userTelegramId, amount) {
+      if (topupLock) return;
+      topupLock = true;
+
       const el = document.getElementById("adminStatus");
+      const btn = document.getElementById("btnTopup");
+      btn.disabled = true;
+      btn.style.opacity = "0.6";
+
       el.innerText = "Processing…";
       try {
         const d = await apiPost("/api/admin/topup", { initData: tg.initData, userTelegramId: String(userTelegramId), amount });
@@ -254,10 +273,15 @@
         await renderMy();
       } catch (e) {
         el.innerText = "❌ " + e.message;
+      } finally {
+        topupLock = false;
+        btn.disabled = false;
+        btn.style.opacity = "1";
       }
     }
 
     document.getElementById("tabFeed").onclick = async () => {
+      await loadMe();
       await loadLots();
       renderFeed();
     };
